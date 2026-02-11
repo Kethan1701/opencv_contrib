@@ -371,4 +371,219 @@ TEST_F(HDF5_Test, test_attribute_InutArray_OutputArray_2d)
     m_hdf_io->close();
 }
 
-}} // namespace
+}
+} // namespace
+#ifdef HAVE_HDF5_F16
+
+/**
+ * Test CV_16F (float16) single-channel dataset write and read.
+ */
+TEST(HDF5, float16_write_read)
+{
+    const String filename = cv::tempfile(".h5");
+    const String dslabel = "float16_data";
+    const int rows = 10;
+    const int cols = 20;
+
+    // Create test data as CV_32F, then convert to CV_16F
+    Mat src32f(rows, cols, CV_32F);
+    RNG rng(42);
+    rng.fill(src32f, RNG::UNIFORM, -1.0f, 1.0f);
+
+    Mat src;
+    src32f.convertTo(src, CV_16F);
+
+    // Write float16 data
+    {
+        Ptr<hdf::HDF5> h5io = hdf::open(filename);
+        ASSERT_FALSE(h5io->hlexists(dslabel));
+        h5io->dswrite(src, dslabel);
+        h5io->close();
+    }
+
+    // Read back and verify
+    {
+        Ptr<hdf::HDF5> h5io = hdf::open(filename);
+        ASSERT_TRUE(h5io->hlexists(dslabel));
+
+        // Verify the stored type is CV_16F
+        int dstype = h5io->dsgettype(dslabel);
+        EXPECT_EQ(CV_16FC1, dstype);
+
+        // Verify dimensions
+        vector<int> dims = h5io->dsgetsize(dslabel);
+        ASSERT_EQ(2u, dims.size());
+        EXPECT_EQ(rows, dims[0]);
+        EXPECT_EQ(cols, dims[1]);
+
+        // Read data
+        Mat dst;
+        h5io->dsread(dst, dslabel);
+        h5io->close();
+
+        // Verify exact match
+        EXPECT_EQ(src.rows, dst.rows);
+        EXPECT_EQ(src.cols, dst.cols);
+        EXPECT_EQ(src.type(), dst.type());
+        EXPECT_EQ(0, cvtest::norm(src, dst, NORM_INF));
+    }
+
+    remove(filename.c_str());
+}
+
+/**
+ * Test CV_16F multi-channel (3-channel) dataset write and read.
+ */
+TEST(HDF5, float16_multichannel)
+{
+    const String filename = cv::tempfile(".h5");
+    const String dslabel = "float16_3ch";
+
+    Mat src32f(5, 8, CV_32FC3);
+    RNG rng(123);
+    rng.fill(src32f, RNG::UNIFORM, -1.0f, 1.0f);
+
+    Mat src;
+    src32f.convertTo(src, CV_16FC3);
+
+    // Write
+    {
+        Ptr<hdf::HDF5> h5io = hdf::open(filename);
+        h5io->dswrite(src, dslabel);
+        h5io->close();
+    }
+
+    // Read and verify
+    {
+        Ptr<hdf::HDF5> h5io = hdf::open(filename);
+        Mat dst;
+        h5io->dsread(dst, dslabel);
+        h5io->close();
+
+        EXPECT_EQ(src.rows, dst.rows);
+        EXPECT_EQ(src.cols, dst.cols);
+        EXPECT_EQ(src.type(), dst.type());
+        EXPECT_EQ(src.channels(), dst.channels());
+        EXPECT_EQ(0, cvtest::norm(src, dst, NORM_INF));
+    }
+
+    remove(filename.c_str());
+}
+
+/**
+ * Test CV_16F n-dimensional dataset write and read.
+ */
+TEST(HDF5, float16_nd)
+{
+    const String filename = cv::tempfile(".h5");
+    const String dslabel = "float16_nd";
+
+    int sizes[] = {3, 4, 5};
+    Mat src32f(3, sizes, CV_32F);
+    RNG rng(456);
+    rng.fill(src32f, RNG::UNIFORM, -0.5f, 0.5f);
+
+    Mat src;
+    src32f.convertTo(src, CV_16F);
+
+    // Write
+    {
+        Ptr<hdf::HDF5> h5io = hdf::open(filename);
+        h5io->dswrite(src, dslabel);
+        h5io->close();
+    }
+
+    // Read and verify
+    {
+        Ptr<hdf::HDF5> h5io = hdf::open(filename);
+        Mat dst;
+        h5io->dsread(dst, dslabel);
+        h5io->close();
+
+        EXPECT_EQ(src.dims, dst.dims);
+        for (int i = 0; i < src.dims; i++)
+            EXPECT_EQ(src.size[i], dst.size[i]);
+        EXPECT_EQ(src.type(), dst.type());
+        EXPECT_EQ(0, cvtest::norm(src, dst, NORM_INF));
+    }
+
+    remove(filename.c_str());
+}
+
+/**
+ * Test CV_16F dataset with explicit create, write, and read.
+ */
+TEST(HDF5, float16_create_write_read)
+{
+    const String filename = cv::tempfile(".h5");
+    const String dslabel = "float16_explicit";
+    const int rows = 6;
+    const int cols = 10;
+
+    Mat src32f(rows, cols, CV_32F);
+    RNG rng(789);
+    rng.fill(src32f, RNG::UNIFORM, -2.0f, 2.0f);
+
+    Mat src;
+    src32f.convertTo(src, CV_16F);
+
+    // Explicit create, then write, then read
+    {
+        Ptr<hdf::HDF5> h5io = hdf::open(filename);
+        h5io->dscreate(rows, cols, CV_16F, dslabel);
+        h5io->dswrite(src, dslabel);
+
+        Mat dst;
+        h5io->dsread(dst, dslabel);
+        h5io->close();
+
+        EXPECT_EQ(src.type(), dst.type());
+        EXPECT_EQ(0, cvtest::norm(src, dst, NORM_INF));
+    }
+
+    remove(filename.c_str());
+}
+
+/**
+ * Test CV_16F dataset with chunking.
+ */
+TEST(HDF5, float16_chunked)
+{
+    const String filename = cv::tempfile(".h5");
+    const String dslabel = "float16_chunked";
+    const int rows = 100;
+    const int cols = 100;
+
+    Mat src32f(rows, cols, CV_32F);
+    RNG rng(321);
+    rng.fill(src32f, RNG::UNIFORM, -1.0f, 1.0f);
+
+    Mat src;
+    src32f.convertTo(src, CV_16F);
+
+    // Write with chunking
+    {
+        Ptr<hdf::HDF5> h5io = hdf::open(filename);
+        vector<int> chunks;
+        chunks.push_back(50);
+        chunks.push_back(50);
+        h5io->dscreate(rows, cols, CV_16F, dslabel, hdf::HDF5::H5_NONE, chunks);
+        h5io->dswrite(src, dslabel);
+        h5io->close();
+    }
+
+    // Read and verify
+    {
+        Ptr<hdf::HDF5> h5io = hdf::open(filename);
+        Mat dst;
+        h5io->dsread(dst, dslabel);
+        h5io->close();
+
+        EXPECT_EQ(src.type(), dst.type());
+        EXPECT_EQ(0, cvtest::norm(src, dst, NORM_INF));
+    }
+
+    remove(filename.c_str());
+}
+
+#endif // HAVE_HDF5_F16
