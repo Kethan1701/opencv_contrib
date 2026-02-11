@@ -211,6 +211,15 @@ inline hid_t HDF5Impl::GetH5type( int cvType ) const
 
     switch ( CV_MAT_DEPTH( cvType ) )
     {
+#ifdef HAVE_HDF5_F16
+      case CV_16F:
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+        h5Type = H5T_IEEE_F16BE;
+#else
+        h5Type = H5T_IEEE_F16LE;
+#endif
+        break;
+#endif
       case CV_64F:
         h5Type = H5T_NATIVE_DOUBLE;
         break;
@@ -241,7 +250,13 @@ inline hid_t HDF5Impl::GetH5type( int cvType ) const
 inline int HDF5Impl::GetCVtype( hid_t h5Type ) const
 {
     int cvType = -1;
-
+#ifdef HAVE_HDF5_F16
+    if ( H5Tequal( h5Type, H5T_IEEE_F16LE ) )
+      cvType = CV_16F;
+    else if ( H5Tequal( h5Type, H5T_IEEE_F16BE ) )
+      cvType = CV_16F;
+    else
+#endif
     if      ( H5Tequal( h5Type, H5T_NATIVE_DOUBLE ) )
       cvType = CV_64F;
     else if ( H5Tequal( h5Type, H5T_NATIVE_FLOAT  ) )
@@ -258,7 +273,6 @@ inline int HDF5Impl::GetCVtype( hid_t h5Type ) const
       cvType = CV_32S;
     else
       CV_Error_(Error::StsInternal, ("Unknown H5Type: %lld.", (long long)h5Type));
-
     return cvType;
 }
 
